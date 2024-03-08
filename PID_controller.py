@@ -166,16 +166,24 @@ def pid_controller(target_distance, pid):
         pid_output = pid.calculate(target_distance, current_distance)
 
         # Apply PID output to drivetrain, handling both forward and backward directions
-        direction = FORWARD if pid_output > 0 else REVERSE
-        drivetrain.set_drive_velocity(abs(pid_output), PERCENT) # Ensure the velocity is positive
-        drivetrain.drive(direction)
+        if pid_output > 0:
+            controller.screen.set_cursor(1,10)
+            controller.screen.print("FORWARD")
+        else:
+            controller.screen.set_cursor(1,10)
+            controller.screen.print("REVERSE")
+
+        drivetrain.set_drive_velocity(pid_output, PERCENT) # Ensure the velocity is positive
+        controller.screen.set_cursor(1,1)
+        controller.screen.print(pid_output)
+        drivetrain.drive(FORWARD)
 
     drivetrain.stop()
 
 
 def get_current_distance():
     # Get the average rotation from the motors
-    average_rotation = (abs(left_drive_middle.position(DEGREES)) + abs(right_drive_middle.position(DEGREES))) / 2
+    average_rotation = (left_drive_middle.position(DEGREES) + right_drive_middle.position(DEGREES)) / 2
     distance_traveled = (average_rotation * (3/4)  / 360) * 2.75 * 3.14159 # gets distance traveled in inches pi*d = distance
     return distance_traveled
 
@@ -318,7 +326,8 @@ def auto():
     pid = PIDController(p=3, i=0.0006, d=1)
     inertial.set_heading(90, DEGREES)
     while competition.is_autonomous() and competition.is_enabled():   
-        
+        pid_controller(-20, pid)
+
         break
 
 def autonomous():
