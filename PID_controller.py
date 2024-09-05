@@ -6,7 +6,6 @@ import urandom
 brain=Brain()
 
 # Robot configuration code
-distance_21 = Distance(Ports.PORT21)
 
 
 # wait for rotation sensor to fully initialize
@@ -35,56 +34,70 @@ brain = Brain()
 controller = Controller()
 
 # Pneumatics + extras
-back_wings = DigitalOut(brain.three_wire_port.a) # back_WINGSSSS
+back_clamp = DigitalOut(brain.three_wire_port.h) # back_clamp
+dunk_mech = DigitalOut(brain.three_wire_port.g) # dunk setup
+corner_clearer = DigitalOut(brain.three_wire_port.f) # corner clearer
 
 # Drive motors
 # YOU ARE IN FRONT OF THE INTAKE
-# port 12 is the radio
-left_drive_front = Motor(Ports.PORT13, GearSetting.RATIO_6_1, True)
-left_drive_back = Motor(Ports.PORT11, GearSetting.RATIO_6_1, True)  # cable needs to be switched
-left_drive_middle = Motor(Ports.PORT12, GearSetting.RATIO_6_1, True)
+# port 20 is the radio
+wheel_diameter = 2.75
+ratio = 1
+pid_tolerance = 0.2
+left_drive_front = Motor(Ports.PORT14, GearSetting.RATIO_6_1, False)
+left_drive_back = Motor(Ports.PORT16, GearSetting.RATIO_6_1, False)  # cable needs to be switched
+left_drive_middle = Motor(Ports.PORT15, GearSetting.RATIO_6_1, True)
 left_drive = MotorGroup(left_drive_front, left_drive_back, left_drive_middle)
-right_drive_front = Motor(Ports.PORT18, GearSetting.RATIO_6_1, False) # cable needs to be switched
-right_drive_back = Motor(Ports.PORT20, GearSetting.RATIO_6_1, False)
-right_drive_middle = Motor(Ports.PORT19, GearSetting.RATIO_6_1, False)
+right_drive_front = Motor(Ports.PORT18, GearSetting.RATIO_6_1, True) # cable needs to be switched
+right_drive_back = Motor(Ports.PORT19, GearSetting.RATIO_6_1, True)
+right_drive_middle = Motor(Ports.PORT17, GearSetting.RATIO_6_1, False)
 right_drive = MotorGroup(right_drive_front, right_drive_back, right_drive_middle)
-drivetrain = DriveTrain(right_drive, left_drive, 319.19, 295, 40, INCHES, 0.75)
+drivetrain = DriveTrain(right_drive, left_drive, 319.19, 295, 40, INCHES, 1)
+arm = Motor(Ports.PORT13, GearSetting.RATIO_18_1, True)
 
 # Miscellaneous motors
-slapper = Motor(Ports.PORT2, GearSetting.RATIO_36_1, False) # needs the cable
-intake = Motor(Ports.PORT17, GearSetting.RATIO_18_1, False)
-inertial = Inertial(Ports.PORT15)
-distance_sensor = Distance(Ports.PORT21)
+intake = Motor(Ports.PORT20, GearSetting.RATIO_18_1, True)
+rotation = Rotation(Ports.PORT21)
+inertial = Inertial(Ports.PORT11)
 
-# setting misc motors velo
+# setting misc motors velo, stopping type, etc...
 intake.set_velocity(100, PERCENT)
-slapper.set_velocity(100, PERCENT)
+arm.set_velocity(100, PERCENT)
+arm.set_stopping(HOLD)
 
 # All motors are controlled from this function which is run as a separate thread
 def drive_task():
-    drivetrain.set_stopping(COAST)
 
+    # System event handlers
+    controller.buttonB.pressed(back_clamp_set) # toggle system for the back_clamp
+    controller.buttonA.pressed(dunk) # toggle system for the dunk mechanism
+    controller.buttonX.pressed(set_corner_clearer) # toggles the corner clearer
+
+    rotation.set_position(0, DEGREES)
+    drivetrain.set_stopping(COAST)
+    arm.set_stopping(HOLD)
     drive_left = 0
     drive_right = 0
 
     global setPiston
-    global setPiston2
+    global setDunk
     global slapperBool
-    back_wings.set(False)
+    global setCornerClearer
+    setCornerClearer = True
+    back_clamp.set(False)
     setPiston = True
+    setDunk = True
     slapperBool = True
-
-    # System event handlers
-    controller.buttonL2.pressed(back_wings_set) # toggle system for the back_wings
-    controller.buttonA.pressed(slapper_toggle) # slapper
 
     wait(15, MSEC)
 
     while competition.is_driver_control() and competition.is_enabled():
-
         # tank drive
         drive_right = controller.axis2.position() # left side is controlled by left axis
         drive_left = controller.axis3.position() # right side is controlled by right axis
+
+        brain.screen.set_cursor(1, 1)
+        brain.screen.print(rotation.position())
 
         if controller.buttonR1.pressing():
             intake.spin(FORWARD)
@@ -92,6 +105,18 @@ def drive_task():
             intake.spin(REVERSE)
         else:
             intake.stop()
+
+        if controller.buttonL1.pressing():
+            arm.spin(FORWARD)
+        elif controller.buttonL2.pressing():
+            arm.spin(REVERSE)
+        else:
+            arm.stop()
+
+        if rotation.position() > 15:
+            arm.set_stopping(HOLD)
+        else:
+            arm.set_stopping(COAST)
 
         deadband = 15
         if abs(drive_left) < deadband:
@@ -108,23 +133,32 @@ def drive_task():
 
         wait(10, MSEC)
 
-def back_wings_set():
+def back_clamp_set():
     global setPiston
     if setPiston:
-        back_wings.set(True)
+        back_clamp.set(True)
         setPiston = False
     else:
-        back_wings.set(False)
+        back_clamp.set(False)
         setPiston = True
 
-def slapper_toggle():
-    global slapperBool
-    if slapperBool:
-        slapper.spin(FORWARD)
-        slapperBool = False
+def dunk():
+    global setDunk
+    if setDunk:
+        dunk_mech.set(True)
+        setDunk = False
     else:
-        slapper.stop()
-        slapperBool = True
+        dunk_mech.set(False)
+        setDunk = True
+
+def set_corner_clearer():
+    global setCornerClearer
+    if setCornerClearer:
+        corner_clearer.set(True)
+        setCornerClearer = False
+    else:
+        corner_clearer.set(False)
+        setCornerClearer = True
 
 class PIDController: 
     def __init__(self, p, i, d):
@@ -144,7 +178,7 @@ class PIDController:
         self.previous_error = error
         return (self.kP * error) + (self.kI * self.integral) + (self.kD * derivative)
 
-def pid_controller(target_distance, pid):
+def pid_controller(target_distance, pid, timeout_duration):
     global left_drive_front, left_drive_middle, left_drive_back, right_drive_front, right_drive_middle, right_drive_back
 
     # Reset the motors to 0 position
@@ -160,23 +194,34 @@ def pid_controller(target_distance, pid):
 
     drivetrain.set_stopping(HOLD)
 
-    # Loop until the error (difference between target and current distance) is small enough
-    while abs(target_distance - current_distance) > 0.1:
+    # Start the timer using the Brain timer
+    brain.timer.reset()
+
+    # Loop until the error (difference between target and current distance) is small enough or timeout occurs
+    while abs(target_distance - current_distance) > pid_tolerance:
         current_distance = get_current_distance()
         pid_output = pid.calculate(target_distance, current_distance)
 
         # Apply PID output to drivetrain, handling both forward and backward directions
         if pid_output > 0:
-            controller.screen.set_cursor(1,10)
+            controller.screen.set_cursor(1, 10)
             controller.screen.print("FORWARD")
         else:
-            controller.screen.set_cursor(1,10)
+            controller.screen.set_cursor(1, 10)
             controller.screen.print("REVERSE")
 
-        drivetrain.set_drive_velocity(pid_output, PERCENT) # Ensure the velocity is positive
-        controller.screen.set_cursor(1,1)
+        drivetrain.set_drive_velocity(pid_output, PERCENT)  # Ensure the velocity is positive
+        controller.screen.set_cursor(1, 1)
         controller.screen.print(pid_output)
         drivetrain.drive(FORWARD)
+        
+        # Check for timeout using Brain's timer
+        if brain.timer.time(SECONDS) >= timeout_duration:
+            controller.screen.set_cursor(1, 10)
+            controller.screen.print("TIMEOUT")
+            break
+
+        wait(20, MSEC)
 
     drivetrain.stop()
 
@@ -184,7 +229,7 @@ def pid_controller(target_distance, pid):
 def get_current_distance():
     # Get the average rotation from the motors
     average_rotation = (left_drive_middle.position(DEGREES) + right_drive_middle.position(DEGREES)) / 2
-    distance_traveled = (average_rotation * (3/4)  / 360) * 2.75 * 3.14159 # gets distance traveled in inches pi*d = distance
+    distance_traveled = (average_rotation * (ratio) / 360) * wheel_diameter * 3.14159 # gets distance traveled in inches pi*d = distance
     return distance_traveled
 
 def swing_right_forward(left, right, degrees):
@@ -321,13 +366,10 @@ def turn_left(degrees):
     brain.screen.print(inertial.heading(DEGREES))
     brain.screen.set_cursor(2, 1)
 
-
 def auto():
-    pid = PIDController(p=3, i=0.0006, d=1)
-    inertial.set_heading(90, DEGREES)
-    while competition.is_autonomous() and competition.is_enabled():   
-        pid_controller(-20, pid)
-
+    pid = PIDController(p=2.5, i=0.025, d=0.001)
+    while competition.is_autonomous() and competition.is_enabled():
+        # put whatever autonomous code here!!
         break
 
 def autonomous():
